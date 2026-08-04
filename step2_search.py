@@ -104,6 +104,42 @@ def strip_tags(text: str | None) -> str | None:
     return clean if clean else None
 
 
+def html_to_multiline_text(text: str | None) -> str | None:
+    """Convert HTML to readable plain text while preserving paragraphs and list breaks."""
+    if text is None:
+        return None
+
+    clean = text
+    clean = re.sub(r"<\s*br\s*/?>", "\n", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"</\s*(p|div|h[1-6])\s*>", "\n\n", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"<\s*li[^>]*>", "\n- ", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"</\s*li\s*>", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"<[^>]+>", "", clean)
+    clean = html.unescape(clean).replace("\xa0", " ")
+
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in clean.splitlines()]
+
+    # Keep at most one empty line between content blocks.
+    compact: list[str] = []
+    previous_blank = True
+    for line in lines:
+        if not line:
+            if not previous_blank:
+                compact.append("")
+            previous_blank = True
+            continue
+        compact.append(line)
+        previous_blank = False
+
+    # Trim leading/trailing blank lines.
+    while compact and compact[0] == "":
+        compact.pop(0)
+    while compact and compact[-1] == "":
+        compact.pop()
+
+    return "\n".join(compact) if compact else None
+
+
 def first_match(pattern: str, text: str, flags: int = re.IGNORECASE | re.DOTALL) -> str | None:
     match = re.search(pattern, text, flags)
     return match.group(1).strip() if match else None
@@ -192,7 +228,7 @@ def parse_detail(detail_html: str, base: JobCard) -> JobDetail:
         location=base.location,
         date=base.date,
         url=base.url,
-        description=strip_tags(description_html),
+        description=html_to_multiline_text(description_html),
         seniority=seniority,
         employment_type=employment_type,
         job_function=job_function,
@@ -388,21 +424,25 @@ def build_parser() -> argparse.ArgumentParser:
     search = subparsers.add_parser("search", help="Search job listings")
     search.add_argument("-l", "--location", required=True, help="Location text, e.g. 'Berlin, Germany'")
     search.add_argument("-q", "--query", default="", help="Keyword query")
-    search.add_argument("--jobage", type=int, choices=[1, 7, 14, 30], help="Posted within N days")
-    search.add_argument("--remote", choices=["remote", "hybrid", "onsite"], help="Workplace type filter")
-    search.add_argument("--page", type=int, default=1, help="Page number (1-indexed)")
+    search.add_argument("-a", "--jobage", type=int, choices=[1, 7, 14, 30], help="Posted within N days")
+    search.add_argument("-r", "--remote", choices=["remote", "hybrid", "onsite"], help="Workplace type filter")
+    search.add_argument("-p", "--page", type=int, default=1, help="Page number (1-indexed)")
     search.add_argument("-n", "--limit", type=int, help="Maximum number of results")
-    search.add_argument("--format", choices=["json", "table", "plain"], default="json")
+    search.add_argument("-f", "--format", choices=["json", "table", "plain"], default="json")
     search.set_defaults(func=search_command)
 
     detail = subparsers.add_parser("detail", help="Fetch full job detail")
     detail.add_argument("target", help="Job ID, LinkedIn URL, or URN")
-    detail.add_argument("--format", choices=["json", "plain"], default="json")
+    detail.add_argument("-f", "--format", choices=["json", "plain"], default="json")
     detail.add_argument(
+        "-o",
+        "--out",
         "--combine-output",
+        dest="combine_output",
         help="Optional path to write combined profile + job detail JSON",
     )
     detail.add_argument(
+        "-p",
         "--profile-file",
         default=str(DEFAULT_PROFILE_FILE),
         help="Path to profile JSON used with --combine-output",
