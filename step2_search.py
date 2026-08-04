@@ -19,6 +19,7 @@ import re
 import sys
 import time
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -26,6 +27,7 @@ from urllib.request import Request, urlopen
 
 SEARCH_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
 DETAIL_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting"
+DEFAULT_PROFILE_FILE = Path(__file__).parent / "profile.json"
 
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -291,6 +293,29 @@ def print_detail(detail: JobDetail, fmt: str) -> None:
     print(detail.description or "-")
 
 
+def load_profile(profile_file: Path) -> dict[str, Any]:
+    if not profile_file.exists():
+        raise ValueError(
+            f"Profile file not found: {profile_file}. Run 'python step1_profile.py' first, "
+            "or pass --profile-file <path>."
+        )
+    try:
+        return json.loads(profile_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in profile file: {profile_file}") from exc
+
+
+def write_combined_output(profile: dict[str, Any], detail: JobDetail, output_file: Path) -> None:
+    combined: dict[str, Any] = {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "source": "step2_search.py",
+        "profile": profile,
+        "job": asdict(detail),
+    }
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    output_file.write_text(json.dumps(combined, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
 def search_command(args: argparse.Namespace) -> int:
     url = build_search_url(args)
     cards_html = html_fetch(url)
@@ -342,6 +367,13 @@ def detail_command(args: argparse.Namespace) -> int:
     )
 
     detail = parse_detail(detail_html, base)
+
+    if args.combine_output:
+        profile = load_profile(Path(args.profile_file))
+        output_file = Path(args.combine_output)
+        write_combined_output(profile, detail, output_file)
+        print(f"Combined profile+job JSON written to: {output_file}")
+
     print_detail(detail, args.format)
     return 0
 
@@ -366,6 +398,15 @@ def build_parser() -> argparse.ArgumentParser:
     detail = subparsers.add_parser("detail", help="Fetch full job detail")
     detail.add_argument("target", help="Job ID, LinkedIn URL, or URN")
     detail.add_argument("--format", choices=["json", "plain"], default="json")
+    detail.add_argument(
+        "--combine-output",
+        help="Optional path to write combined profile + job detail JSON",
+    )
+    detail.add_argument(
+        "--profile-file",
+        default=str(DEFAULT_PROFILE_FILE),
+        help="Path to profile JSON used with --combine-output",
+    )
     detail.set_defaults(func=detail_command)
 
     return parser

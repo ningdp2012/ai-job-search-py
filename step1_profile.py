@@ -102,13 +102,16 @@ def collect_profile() -> dict:
 
 
 def save_profile(profile: dict) -> None:
-    PROFILE_FILE.write_text(json.dumps(profile, indent=2, ensure_ascii=False))
+    PROFILE_FILE.write_text(
+        json.dumps(profile, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     print(f"\n✓ Profile saved to: {PROFILE_FILE}")
 
 
 def load_profile() -> dict | None:
     if PROFILE_FILE.exists():
-        return json.loads(PROFILE_FILE.read_text())
+        return json.loads(PROFILE_FILE.read_text(encoding="utf-8"))
     return None
 
 

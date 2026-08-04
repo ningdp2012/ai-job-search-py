@@ -1,5 +1,6 @@
 # Profile data (contains personal information)
 profile.json
+jobs/
 
 # Python
 __pycache__/
